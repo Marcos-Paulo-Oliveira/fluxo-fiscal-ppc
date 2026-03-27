@@ -26,7 +26,7 @@ st.set_page_config(page_title="PPC - Sistema Fiscal", page_icon="📊", layout="
 if 'dados_processados' not in st.session_state:
     st.session_state.dados_processados = None
 
-# --- FUNÇÃO ORIGINAL DA MEMÓRIA DE CÁLCULO (ESTRUTURA PRESERVADA) ---
+# --- FUNÇÃO DA MEMÓRIA DE CÁLCULO ---
 def aplicar_estilo_ppc(writer, df_filtrado, colunas_mapeadas, nome_aba, titulo_imposto, razao, cnpj, comp):
     ws = writer.book.create_sheet(nome_aba)
     writer.sheets[nome_aba] = ws
@@ -62,7 +62,7 @@ def aplicar_estilo_ppc(writer, df_filtrado, colunas_mapeadas, nome_aba, titulo_i
         cell.alignment = align_center
         cell.border = thin_border
 
-    total_valor_imposto = 0 # Para alimentar o consolidado
+    total_valor_imposto = 0 
 
     if df_filtrado.empty:
         row_msg = 7
@@ -73,7 +73,6 @@ def aplicar_estilo_ppc(writer, df_filtrado, colunas_mapeadas, nome_aba, titulo_i
         for col_idx in range(2, ultima_col_idx + 1):
             ws.cell(row=row_msg, column=col_idx).border = thin_border
     else:
-        # TRATAMENTO DO CÓDIGO DE SERVIÇO (Ponto em vez de vírgula)
         for col_orig, col_dest in colunas_mapeadas.items():
             if col_dest == 'Cód. Serviço':
                 df_filtrado[col_orig] = df_filtrado[col_orig].astype(str).str.replace(',', '.')
@@ -99,31 +98,32 @@ def aplicar_estilo_ppc(writer, df_filtrado, colunas_mapeadas, nome_aba, titulo_i
         last_row = 6 + len(dados_finais)
         row_total = last_row + 1
         
-        # BORDAS E FORMATAÇÃO DO TOTAL (CORRIGIDO)
         ws.merge_cells(start_row=row_total, start_column=2, end_row=row_total, end_column=6)
         cell_total_label = ws.cell(row=row_total, column=2, value="TOTAL")
         cell_total_label.font = Font(bold=True)
-        cell_total_label.alignment = Alignment(horizontal='right', vertical='center')
+        # CORREÇÃO: Alinhamento centralizado para o rótulo TOTAL
+        cell_total_label.alignment = align_center
         
         for col_idx in range(2, ultima_col_idx + 1):
-            ws.cell(row=row_total, column=col_idx).border = thin_border
+            cell_borda = ws.cell(row=row_total, column=col_idx)
+            cell_borda.border = thin_border
+            # CORREÇÃO: Garante centralização em todas as células da linha total
+            cell_borda.alignment = align_center
 
         for col_idx in range(7, ultima_col_idx + 1):
             header_text = list(colunas_mapeadas.values())[col_idx-2]
             if header_text in moeda_cols:
                 col_letter = get_column_letter(col_idx)
                 cell_sum = ws.cell(row=row_total, column=col_idx)
-                # Soma via fórmula Excel para a planilha, mas calculamos aqui para o consolidado
                 valor_soma = dados_finais[header_text].sum()
                 cell_sum.value = f"=SUM({col_letter}7:{col_letter}{last_row})"
                 cell_sum.font = Font(bold=True)
                 cell_sum.number_format = 'R$ #,##0.00'
+                cell_sum.alignment = align_center
                 
-                # Captura o valor se for a coluna de imposto final
                 if header_text in ['Valor IRRF', 'Total PCC', 'Valor INSS', 'ISS']:
                     total_valor_imposto += valor_soma
 
-    # Ajuste de largura automático
     for col in ws.columns:
         max_length = 0
         column_letter = col[0].column_letter
@@ -152,7 +152,6 @@ def gerador_memoria_calculo():
             cnpj = df['Cnpj Empresa'].iloc[0]
             data_dt = pd.to_datetime(df['Data Competência'].iloc[0])
             
-            # Correção de Idioma para o Período
             mes_eng = data_dt.strftime('%B')
             periodo_pt = f"{meses_pt.get(mes_eng, mes_eng)} de {data_dt.year}"
             comp_file = data_dt.strftime('%m.%Y')
@@ -164,7 +163,6 @@ def gerador_memoria_calculo():
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 m_base = {'Emissão NFe': 'Data Emissão', 'Número NFe': 'Nota Fiscal', 'Serviço Federal': 'Cód. Serviço', 'Prestador': 'Prestador', 'Cnpj/Cpf Prestador': 'CNPJ', 'Valor NFe': 'Vlr Contábil'}
                 
-                # Mapeamentos completos (com alíquotas preservadas)
                 resumo['1708'] = aplicar_estilo_ppc(writer, df[df['DARF IRRF'] == 1708], {**m_base, 'Base de Cálculo ISS': 'Base IRRF', '% IRRF': 'Aliq. IRRF', 'Valor IRRF': 'Valor IRRF'}, 'IRRF 1708', 'IRRF 1708', razao, cnpj, comp_titulo)
                 resumo['5952'] = aplicar_estilo_ppc(writer, df[df['DARF CSRF'] == 5952], {**m_base, 'Base de Cálculo ISS': 'Base CSR', '% CSRF': 'Aliq. CSRF', 'Valor CSRF': 'Total PCC'}, 'CSRF', 'CSRF', razao, cnpj, comp_titulo)
                 resumo['8045'] = aplicar_estilo_ppc(writer, df[df['DARF IRRF'] == 8045], {**m_base, 'Base de Cálculo ISS': 'Base IRRF', '% IRRF': 'Aliq. IRRF', 'Valor IRRF': 'Valor IRRF'}, 'IRRF 8045', 'IRRF 8045', razao, cnpj, comp_titulo)
@@ -199,7 +197,6 @@ def gerador_relatorio_consolidado():
         ws.title = "Relatório Consolidado"
         ws.sheet_view.showGridLines = False
 
-        # ESTILOS
         azul_ppc = PatternFill(start_color='002060', end_color='002060', fill_type='solid')
         cinza_claro = PatternFill(start_color='F2F2F2', end_color='F2F2F2', fill_type='solid')
         laranja_suave = PatternFill(start_color='FCE4D6', end_color='FCE4D6', fill_type='solid')
@@ -255,13 +252,21 @@ def gerador_relatorio_consolidado():
             c_tipo = ws.cell(row=row_idx, column=2, value=tipo)
             c_tipo.fill, c_tipo.font = laranja_suave, font_preta_bold
             ws.cell(row=row_idx, column=3, value=cod)
-            ws.cell(row=row_idx, column=4, value=valor).number_format = 'R$ #,##0.00'
+            
+            # CORREÇÃO: Lógica do traço para valores zerados
+            c_valor = ws.cell(row=row_idx, column=4)
+            if valor == 0:
+                c_valor.value = "-"
+            else:
+                c_valor.value = valor
+                c_valor.number_format = 'R$ #,##0.00'
+            
             ws.merge_cells(start_row=row_idx, start_column=5, end_row=row_idx, end_column=6)
             ws.cell(row=row_idx, column=5, value=desc)
             ws.cell(row=row_idx, column=7, value=obs)
             for c in range(2, 8):
                 ws.cell(row=row_idx, column=c).border = borda_fina
-                ws.cell(row=row_idx, column=c).alignment = Alignment(horizontal='center')
+                ws.cell(row=row_idx, column=c).alignment = Alignment(horizontal='center', vertical='center')
             row_idx += 1
 
         ws.merge_cells(f'B{row_idx}:C{row_idx}')
